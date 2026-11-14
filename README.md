@@ -36,7 +36,7 @@ banner) or via ADB.
 
 - JDK 17+ (built with JDK 21)
 - Android SDK: platform 34, build-tools 34+
-- Gradle 8.7+ (AGP 8.5.2). No Gradle wrapper is included.
+- Gradle 8.7+ via the included wrapper (AGP 8.5.2).
 - ADB access to the TV (this project used `192.168.1.3:5555`).
 
 Create `local.properties` (git-ignored):
@@ -49,10 +49,10 @@ sdk.dir=/absolute/path/to/Android/Sdk
 
 ```bash
 # debug
-gradle assembleDebug
+./gradlew assembleDebug
 
 # release (R8 minify + resource shrink)
-gradle assembleRelease
+./gradlew assembleRelease
 ```
 
 Release is signed with the local **debug keystore** on purpose, so
@@ -122,6 +122,33 @@ app/src/main/
   res/raw/launch_pluck.wav       launch sound
   res/drawable-nodpi/banner.png  Android TV banner
 ```
+
+## GitHub Actions
+
+Public repositories get GitHub-hosted runners for free; the workflow at
+`.github/workflows/build.yml` builds a release APK on every push to `main`,
+on `v*` tags, and manually via **Actions → Build release APK → Run workflow**.
+
+- Every run uploads an APK artifact (30-day retention).
+- Pushing a tag like `v1.0.0` also creates a GitHub Release with the APK
+  attached.
+
+### CI signing
+
+By default CI generates a throwaway debug keystore, so the resulting APK is
+valid but has a different signature from your local install (uninstall before
+installing it). To sign consistently, add these repository secrets:
+
+| Secret | Value |
+|---|---|
+| `SIGNING_KEYSTORE_BASE64` | `base64 -w0 release.keystore` |
+| `SIGNING_STORE_PASSWORD` | keystore password |
+| `SIGNING_KEY_ALIAS` | key alias |
+| `SIGNING_KEY_PASSWORD` | key password |
+
+When `SIGNING_KEYSTORE_BASE64` is present, the workflow decodes it to a
+temporary file and Gradle signs with it; otherwise it falls back to the
+generated debug key.
 
 ## Regenerating wallpapers
 

@@ -20,12 +20,29 @@ android {
         abortOnError = false
     }
 
+    val ciKeystore = System.getenv("SIGNING_KEYSTORE_PATH")
+    signingConfigs {
+        if (ciKeystore != null) {
+            create("ci") {
+                storeFile = file(ciKeystore)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // same key as the debug install, so updating keeps app data
-            signingConfig = signingConfigs.getByName("debug")
+            // CI uses the keystore from secrets when provided; otherwise the
+            // local debug key (so local installs update in place).
+            signingConfig = if (ciKeystore != null) {
+                signingConfigs.getByName("ci")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
