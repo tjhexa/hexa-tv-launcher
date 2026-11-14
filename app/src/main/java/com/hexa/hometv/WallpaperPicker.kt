@@ -49,14 +49,17 @@ private class WallTile(context: Context) : FrameLayout(context) {
 
 class WallpaperPicker(
     context: Context,
-    count: Int,
+    stillCount: Int,
+    videoPos: Int,
     skipped: Set<Int>,
     current: Int,
     onPick: (Int) -> Unit,
     onToggleSkip: (Int, Boolean) -> Unit
 ) : FrameLayout(context) {
 
-    private val adapter = Adapter(count, skipped.toMutableSet(), current, onPick, onToggleSkip)
+    private val adapter = Adapter(
+        stillCount, videoPos, skipped.toMutableSet(), current, onPick, onToggleSkip
+    )
     private lateinit var recycler: RecyclerView
 
     init {
@@ -108,7 +111,8 @@ class WallpaperPicker(
     }
 
     private class Adapter(
-        private val count: Int,
+        private val stillCount: Int,
+        private val videoPos: Int,
         private val skipped: MutableSet<Int>,
         private val current: Int,
         private val onPick: (Int) -> Unit,
@@ -116,11 +120,12 @@ class WallpaperPicker(
     ) : RecyclerView.Adapter<Adapter.VH>() {
 
         private val thumbs = HashMap<Int, Bitmap?>()
+        private val itemCount = stillCount + if (videoPos >= 0) 1 else 0
 
         class VH(v: View, val image: ImageView, val label: TextView, val skip: TextView) :
             RecyclerView.ViewHolder(v)
 
-        override fun getItemCount() = count
+        override fun getItemCount() = itemCount
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val ctx = parent.context
@@ -166,13 +171,20 @@ class WallpaperPicker(
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val ctx = holder.itemView.context
+            val isVideo = position == videoPos
             var bmp = thumbs[position]
             if (bmp == null && !thumbs.containsKey(position)) {
+                val opts = BitmapFactory.Options().apply { inSampleSize = 8 }
                 bmp = try {
-                    val name = Wallpapers.nameAt(ctx, position)
-                    val opts = BitmapFactory.Options().apply { inSampleSize = 8 }
-                    ctx.assets.open("walls/$name").use {
-                        BitmapFactory.decodeStream(it, null, opts)
+                    if (isVideo) {
+                        ctx.assets.open(Wallpapers.VIDEO_POSTER_PATH).use {
+                            BitmapFactory.decodeStream(it, null, opts)
+                        }
+                    } else {
+                        val name = Wallpapers.nameAt(ctx, position)
+                        ctx.assets.open("walls/$name").use {
+                            BitmapFactory.decodeStream(it, null, opts)
+                        }
                     }
                 } catch (e: Exception) {
                     null
@@ -182,8 +194,12 @@ class WallpaperPicker(
             holder.image.setImageBitmap(bmp)
             holder.image.alpha = if (skipped.contains(position)) 0.35f else 1f
             val isCurrent = position == current
-            holder.label.text = if (isCurrent) "Wall ${position + 1} · CURRENT"
-            else "Wall ${position + 1}"
+            holder.label.text = when {
+                isVideo && isCurrent -> "JATAYU · CURRENT"
+                isVideo -> "JATAYU · VIDEO"
+                isCurrent -> "Wall ${position + 1} · CURRENT"
+                else -> "Wall ${position + 1}"
+            }
             holder.label.setTextColor(
                 if (isCurrent) 0xFFE9C887.toInt() else 0xFFD8CFBD.toInt()
             )

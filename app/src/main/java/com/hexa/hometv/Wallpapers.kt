@@ -4,9 +4,12 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 
-/** Twelve wallpapers baked into the APK, rotated hourly. */
+/** Wallpapers baked into the APK, rotated hourly. */
 object Wallpapers {
     private const val DIR = "walls"
+    private const val VIDEO_DIR = "video"
+    private const val VIDEO_FILE = "jatayu_vimana_bg.mp4"
+    const val VIDEO_POSTER_PATH = "$VIDEO_DIR/jatayu_vimana_poster.jpg"
 
     private fun names(ctx: Context): List<String> = try {
         ctx.assets.list(DIR)?.filter { it.endsWith(".jpg", true) }?.sorted() ?: emptyList()
@@ -33,4 +36,24 @@ object Wallpapers {
     } catch (e: Exception) {
         null
     }
+
+    /** True when the looping Jatayu/Vimana clip is bundled with the APK. */
+    fun hasVideo(ctx: Context): Boolean = try {
+        ctx.assets.open("$VIDEO_DIR/$VIDEO_FILE").close()
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    fun videoAssetPath(): String = "$VIDEO_DIR/$VIDEO_FILE"
+
+    fun videoPoster(ctx: Context): Bitmap? = try {
+        ctx.assets.open(VIDEO_POSTER_PATH).use { BitmapFactory.decodeStream(it) }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** The video is the extra item after the stills (index == count). */
+    fun isVideo(ctx: Context, index: Int): Boolean =
+        hasVideo(ctx) && index == count(ctx)
 }

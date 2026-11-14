@@ -21,6 +21,10 @@ banner) or via ADB.
 - **50 baked wallpapers** — hourly rotation by default; interval choices from
   30 minutes to daily or never. Picker with thumbnails (OK set, hold OK
   skip/unskip), *CURRENT* marker, crossfade, brightness-aware scrims.
+- **Video wallpaper** — a muted, 9.7 s seamless loop of Jatayu and the Pushpaka
+  Vimana, selectable as the last picker tile and included in the rotation. It
+  plays on a `SurfaceView` behind the UI, pauses when the launcher is not
+  visible, and releases the decoder when a still wallpaper is selected.
 - **Clock/date** — `hh:mm`, 12/24-hour, Small/Medium/Large, date on/off.
 - **Wordmark** — Cinzel "TJHEXA" top-right with a periodic light sweep;
   on/off and Gold/Ivory/Silver.
@@ -113,10 +117,12 @@ app/src/main/
     AllAppsOverlay.kt            5-column app grid with favourites
     WallpaperPicker.kt           50-thumbnail picker, skip markers
     Wallpapers.kt                asset lookup/decoding
+    VideoBackground.kt           muted looping SurfaceView + MediaPlayer
     Prefs.kt                     all persisted state
     ShimmerTextView.kt           Cinzel wordmark + light sweep
     HomeDreamService.kt          screensaver
   assets/walls/wall01..50.jpg    baked 1920×1080 wallpapers
+  assets/video/                  Jatayu/Vimana loop + poster frame
   assets/fonts/cinzel.ttf        SIL OFL 1.1
   res/raw/nav_shimmer.wav        navigation sound
   res/raw/launch_pluck.wav       launch sound
@@ -162,8 +168,9 @@ into `app/src/main/assets/walls/`.
 - The app has **no network permission**. This TV blocks socket creation for
   its UID, so wallpapers are baked in rather than fetched at runtime.
 - No root. The stock Google TV launcher remains installed and enabled.
-- Bundled artwork is for personal use: the owner-supplied Hogwarts fan art and
-  Bing wallpapers are not redistributed by this project. Cinzel is SIL OFL.
+- Bundled artwork is for personal use: the owner-supplied Hogwarts fan art,
+  Bing wallpapers and the Jatayu/Vimana trailer excerpt are not redistributed
+  by this project. Cinzel is SIL OFL.
 - Measured on the target TV: ~46 MB PSS, 0 % janky frames, ~6 ms median.
 
 ## Enabling the screensaver

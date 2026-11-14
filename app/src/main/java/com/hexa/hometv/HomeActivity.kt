@@ -20,6 +20,7 @@ import android.text.format.DateFormat
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -41,6 +42,11 @@ class HomeActivity : Activity() {
     }
 
     private lateinit var root: FrameLayout
+    private lateinit var videoSurface: SurfaceView
+    private var videoBg: VideoBackground? = null
+    private var videoMode = false
+    private var videoFrameShown = false
+    private var stillsVisible = false
     private lateinit var bgA: ImageView
     private lateinit var bgB: ImageView
     private var activeBg = 0
@@ -95,9 +101,20 @@ class HomeActivity : Activity() {
         root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
 
+        // The video surface renders behind the window's views. It stays gone
+        // while a still wallpaper is active so no decoder is allocated.
+        videoSurface = SurfaceView(this).apply {
+            visibility = View.GONE
+        }
+        root.addView(videoSurface, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
         bgA = ImageView(this).apply {
+            // no backing colour: an empty bgA must stay transparent so the
+            // video surface can show through when the video wallpaper is used
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(Color.BLACK)
         }
         bgB = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -312,15 +329,19 @@ class HomeActivity : Activity() {
         } else {
             scheduleWallpaper()
         }
+        if (videoMode) videoBg?.play()
     }
 
     override fun onPause() {
         handler.removeCallbacks(clockTick)
+        videoBg?.pause()
         super.onPause()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        videoBg?.release()
+        videoBg = null
         sounds.release()
         bgBitmaps.forEach { it?.recycle() }
         bgBitmaps.fill(null)
@@ -328,21 +349,27 @@ class HomeActivity : Activity() {
     }
 
     private fun showWallpaper(index: Int) {
-        Thread {
-            showBg(Wallpapers.decode(this, index))
-        }.start()
+        if (Wallpapers.isVideo(this, index)) {
+            showVideoWallpaper()
+        } else {
+            videoMode = false
+            Thread {
+                applyStill(Wallpapers.decode(this, index))
+            }.start()
+        }
     }
 
     private fun nextWallpaper() {
-        val n = Wallpapers.count(this)
-        if (n <= 0) return
+        val total = Wallpapers.count(this) +
+                if (Wallpapers.hasVideo(this)) 1 else 0
+        if (total <= 0) return
         val skipped = prefs.skippedWalls
-        var idx = prefs.wallIndex
+        var idx = prefs.wallIndex.coerceIn(0, total - 1)
         var tries = 0
         do {
-            idx = ((idx % n) + 1) % n
+            idx = (idx + 1) % total
             tries++
-        } while (idx in skipped && tries <= n)
+        } while (idx in skipped && tries <= total)
         prefs.wallIndex = idx
         prefs.lastRotate = System.currentTimeMillis()
         showWallpaper(idx)
@@ -365,21 +392,91 @@ class HomeActivity : Activity() {
         scheduleWallpaper()
     }
 
-    private fun showBg(bmp: Bitmap?) {
+    private fun showVideoWallpaper() {
+        videoMode = true
+        videoFrameShown = false
+        if (videoBg == null) {
+            videoBg = VideoBackground(this, videoSurface, Wallpapers.videoAssetPath()) {
+                onVideoFirstFrame()
+            }
+        }
+        if (videoSurface.visibility != View.VISIBLE) videoSurface.visibility = View.VISIBLE
+        videoBg?.play()
+
+        // If nothing is on screen yet (cold start on the video), put the poster
+        // up so the launcher never opens on a black frame.
+        if (!stillsVisible) {
+            Thread {
+                val poster = Wallpapers.videoPoster(this)
+                if (poster != null) {
+                    runOnUiThread {
+                        if (videoMode && !videoFrameShown) applyStill(poster) else poster.recycle()
+                    }
+                }
+            }.start()
+        }
+    }
+
+    private fun onVideoFirstFrame() {
+        runOnUiThread {
+            if (!videoMode || videoFrameShown) return@runOnUiThread
+            videoFrameShown = true
+            if (!stillsVisible) return@runOnUiThread
+            // crossfade from the still/poster down to the moving video
+            bgA.animate().cancel()
+            bgB.animate().cancel()
+            bgA.animate().alpha(0f).setDuration(450).withEndAction { clearStills() }.start()
+            bgB.animate().alpha(0f).setDuration(450).start()
+        }
+    }
+
+    private fun clearStills() {
+        if (!videoMode) return
+        bgA.setImageDrawable(null)
+        bgB.setImageDrawable(null)
+        bgBitmaps.forEach { it?.recycle() }
+        bgBitmaps.fill(null)
+        bgA.alpha = 1f
+        bgB.alpha = 0f
+        // Hide both layers while the video is active; the video surface sits
+        // behind the window and must not be covered by stale views.
+        bgA.visibility = View.INVISIBLE
+        bgB.visibility = View.INVISIBLE
+        activeBg = 0
+        stillsVisible = false
+    }
+
+    private fun stopVideo() {
+        videoBg?.release()
+        videoBg = null
+        videoSurface.visibility = View.GONE
+        videoFrameShown = false
+    }
+
+    private fun applyStill(bmp: Bitmap?) {
         if (bmp == null) return
         runOnUiThread {
             if (isFinishing || isDestroyed) {
                 bmp.recycle()
                 return@runOnUiThread
             }
+            val wasHidden = !stillsVisible
             bgA.animate().cancel()
             bgB.animate().cancel()
-            val slot = 1 - activeBg
+            bgA.visibility = View.VISIBLE
+            bgB.visibility = View.VISIBLE
+            val slot = if (wasHidden) 1 else 1 - activeBg
             val target = if (slot == 0) bgA else bgB
             val old = bgBitmaps[slot]
             bgBitmaps[slot] = bmp
             target.setImageBitmap(bmp)
-            if (slot == 1) {
+            if (wasHidden) {
+                // fading back in over the video surface (or at cold start)
+                target.alpha = 0f
+                target.animate().alpha(1f).setDuration(450).withEndAction {
+                    if (!videoMode) stopVideo()
+                }.start()
+            } else if (slot == 1) {
                 // bgB is the top layer: fade it in
                 target.alpha = 0f
                 target.animate().alpha(1f).setDuration(450).start()
@@ -390,6 +487,7 @@ class HomeActivity : Activity() {
             }
             activeBg = slot
             if (old != null && old !== bmp) old.recycle()
+            stillsVisible = true
             applyScrims(bmp)
         }
     }
@@ -907,10 +1005,12 @@ class HomeActivity : Activity() {
     private fun showWallpaperPicker() {
         if (wallpaperPicker != null) return
         val n = Wallpapers.count(this)
-        if (n <= 0) return
+        val videoPos = if (Wallpapers.hasVideo(this)) n else -1
+        if (n <= 0 && videoPos < 0) return
         val picker = WallpaperPicker(
             this,
             n,
+            videoPos,
             prefs.skippedWalls,
             prefs.wallIndex,
             onPick = { idx ->

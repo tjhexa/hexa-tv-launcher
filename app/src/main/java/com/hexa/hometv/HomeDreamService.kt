@@ -119,7 +119,11 @@ class HomeDreamService : DreamService() {
         setContentView(root)
 
         Thread {
-            val bmp = Wallpapers.decode(this, prefs.wallIndex)
+            val bmp = if (Wallpapers.isVideo(this, prefs.wallIndex)) {
+                Wallpapers.videoPoster(this)
+            } else {
+                Wallpapers.decode(this, prefs.wallIndex)
+            }
             handler.post { image?.setImageBitmap(bmp) }
         }.start()
 
